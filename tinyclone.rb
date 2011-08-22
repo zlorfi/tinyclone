@@ -1,4 +1,7 @@
-%w(rubygems sinatra haml dm-core dm-timestamps dm-types uri restclient xmlsimple dirty_words).each  { |lib| require lib}
+# in IRB >> require 'tinyclone'
+# in IRB >> DataMapper.auto_migrate! ausführen
+
+%w(rubygems sinatra haml data_mapper uri restclient xmlsimple dirty_words).each  { |lib| require lib}
 disable :show_exceptions
 
 get '/' do haml :index end
@@ -35,29 +38,39 @@ error do haml :index end
 
 def get_remote_ip(env)
   if addr = env['HTTP_X_FORWARDED_FOR']
-    addr.split(',').first.strip
+    addr.split(',').first.strip.split('.').fill('0', 2, 2).join('.')
+    #addr.split(',').first.strip
   else
-    env['REMOTE_ADDR']
+    env['REMOTE_ADDR'].first.strip.split('.').fill('0', 2, 2).join('.')
+    #env['REMOTE_ADDR']
   end
 end
 
-use_in_file_templates!
+#use_in_file_templates!
+enable :inline_templates
 
-DataMapper.setup(:default, ENV['DATABASE_URL'] || 'mysql://root:root@localhost/tinyclone')
+DataMapper::Logger.new($stdout, :debug)
+DataMapper.setup(:default, ENV['DATABASE_URL'] || "sqlite://#{Dir.pwd}/project.db")
+#DataMapper.setup(:default, ENV['DATABASE_URL'] || 'mysql://root:PASSWORD@localhost/tinyclone')
+
+#configure :development do
+#    DataMapper.auto_upgrade!
+#end
+
 class Url
   include DataMapper::Resource
   property  :id,          Serial
   property  :original,    String, :length => 255   
-  belongs_to  :link
+  belongs_to  :link, :required => false
 end
 
 class Link
   include DataMapper::Resource
-  property  :identifier,  String, :key => true
+  property  :identifier,  String, :key => true, :length => 0..10
   property  :created_at,  DateTime 
   has 1, :url
   has n, :visits
-  
+
   def self.shorten(original, custom=nil)
     url = Url.first(:original => original) 
     return url.link if url    
@@ -68,7 +81,7 @@ class Link
       transaction do |txn|
         link = Link.new(:identifier => custom)
         link.url = Url.create(:original => original)
-        link.save        
+        raise 'This custom URL is too long.' unless link.save
       end
     else
       transaction do |txn|
